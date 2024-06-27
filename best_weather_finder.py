@@ -1,10 +1,22 @@
 import requests
 import folium
+import streamlit as st
+import re
 from geopy.distance import geodesic
 from datetime import datetime, timezone
 from streamlit_folium import folium_static
-import streamlit as st
 from typing import Optional, Tuple
+
+def parse_population(population_data: str) -> int:
+
+    match = re.search(r'\d[\d\s]*', population_data)
+    if match:
+        cleaned_population_str = match.group().replace(' ', '')
+        population = int(cleaned_population_str)
+    else:
+        population = 0 
+    return population
+
 
 # Function to get towns within a radius
 def get_towns_within_radius(center_lat, center_lon, radius_km, min_population=500):
@@ -25,7 +37,7 @@ def get_towns_within_radius(center_lat, center_lon, radius_km, min_population=50
     for element in data['elements']:
         if 'tags' in element and 'population' in element['tags']:
             #! Population may contain letters as well!
-            population = int(element['tags']['population'])
+            population = parse_population(element['tags']['population'])
             if population > min_population:
                 town = (element['tags']['name'], element['lat'], element['lon'])
                 towns.append(town)
@@ -36,11 +48,22 @@ def get_towns_within_radius(center_lat, center_lon, radius_km, min_population=50
 # Function to get weather data for multiple towns
 def get_weather_data_for_towns(towns, api_key):
     weather_data_list = []
-    for town in towns:
+    status_text = st.empty()
+    status_text.write('Fetching weather data...')
+    progress_bar = st.progress(0)
+
+    for index, town in enumerate(towns):
         lat, lon = town[1], town[2]
         url = f"http://api.openweathermap.org/data/2.5/forecast?lat={lat}&lon={lon}&appid={api_key}&units=metric"
         response = requests.get(url).json()
         weather_data_list.append((town[0], response))
+
+        progress_percentage = int((index + 1) / len(towns) * 100)
+        progress_bar.progress(progress_percentage)
+
+    progress_bar.empty()
+    status_text.empty()
+
     return weather_data_list
 
 
@@ -138,37 +161,35 @@ def get_user_coordinates(location) -> Optional[Tuple[float, float]]:
     if len(data['elements']) >= 1:
         found_location = data['elements'][0]
         print(f"Found coordinates for {location}: {found_location['lat']}, {found_location['lon']}")
-        return found_location['lat'], found_location['lon']
+        return found_location
     else:
         print(f"Could not find coordinates for {location}. Please make sure the location is spelled correctly.")
         return None, None
 
 
-def calculate_weather_scores_and_max(weather_data_list, weights) -> Tuple[list, str]:
+def calculate_weather_scores_and_max(weather_data_list, weights) -> Tuple[list, float]:
     weather_scores = []
-    max_score_town = None
     max_score = 0
     for town, weather in weather_data_list:
         score = calculate_weather_score(weather, weights)
         if score > max_score:
             max_score = score
-            max_score_town = town
         weather_scores.append((town, weather, score))
 
-    return weather_scores, max_score_town
+    return weather_scores, max_score
 
 
-def display_on_map(weather_scores, max_score_town, center_lat, center_lon):
+def display_on_map(weather_scores, max_score, center_lat, center_lon, radius_km):
         # Visualize on a map
     map_center = [center_lat, center_lon]
-    mymap = folium.Map(location=map_center, zoom_start=10)
-
+    mymap = folium.Map(location=map_center, zoom_start = 9)
+    
     for weather_score in weather_scores:
-        if weather_score[0] == max_score_town:
+        if weather_score[2] == max_score:
             folium.Marker(
                 location=[weather_score[1]['city']['coord']['lat'], weather_score[1]['city']['coord']['lon']],
                 popup=f"{weather_score[0]}: {weather_score[2]:.2f}",
-                icon=folium.Icon(color='green')
+                icon=folium.Icon(color='green')  
             ).add_to(mymap)
         else:
             folium.Marker(
@@ -182,49 +203,64 @@ def display_on_map(weather_scores, max_score_town, center_lat, center_lon):
 def find_best_weather(user_location, user_radius, user_population):
     #! Insert your OpenWeatherMap API key here. Create account, activate via email link, API key will be emailed to you.
     api_key = '88d3e456f87cc1e050630459f9c1a301'
-    center_lat, center_lon = get_user_coordinates(user_location)  # Example coordinates for Aachen, Germany
+    user_town = get_user_coordinates(user_location)
+    user_lat = user_town['lat']
+    user_lon = user_town['lon']
     
     weather_map = None
-    if center_lat is None or center_lon is None:
-        return False, weather_map
+    if user_lat is None or user_lon is None:
+        return False, True, weather_map
     else:
         coordinates_found = True
     
     weights = {'temp': 0.5, 'wind': 0.3, 'rain': 0.2}
 
-    towns = get_towns_within_radius(center_lat, center_lon, user_radius, user_population)
-    weather_data_list = get_weather_data_for_towns(towns, api_key)
-    weather_scores, max_score_town = calculate_weather_scores_and_max(weather_data_list, weights)
-    weather_map = display_on_map(weather_scores, max_score_town, center_lat, center_lon)
+    towns = get_towns_within_radius(user_lat, user_lon, user_radius, user_population)
+    towns.append((user_location, user_lat, user_lon))   
 
-    return coordinates_found, weather_map
+    if(len(towns) == 0):
+        return True, False, weather_map
+    else: 
+        towns_found = True
+    
+    weather_data_list = get_weather_data_for_towns(towns, api_key)
+    weather_scores, max_score = calculate_weather_scores_and_max(weather_data_list, weights)
+    weather_map = display_on_map(weather_scores, max_score, user_lat, user_lon, user_radius)
+
+    return coordinates_found, towns_found, weather_map
 
 if __name__ == "__main__":
     st.title('Best Weather Finder')
     st.subheader('Your solution to summer, wherever and whenever!')
-    user_location = st.text_input('Where are you traveling from? Make sure to spell it correctly and in English!')
-    user_location = user_location.lower().capitalize()
+    user_location = st.text_input('Where are you traveling from? e.g. New York')
+    
+    user_location = user_location.title()
     user_radius = st.slider('How far are you willing to travel?', 0, 100, 5)
     user_population = st.slider('Minimum population of town?', 0, 1000000, 500)
     if st.button('Find Best Weather!'):
-        st.write('Finding the best weather...')
-        st.write('This may take a few seconds...')
-        coordinates_found, weather_map = find_best_weather(user_location, user_radius, user_population)
+        if not user_location.strip(): # Handle empty input
+            st.error('Please enter a valid location.')
+            st.stop()
+
+        status_text = st.empty()
+        status_text.write('Finding the best weather...')
+        coordinates_found, towns_found, weather_map = find_best_weather(user_location, user_radius, user_population)
+        status_text.empty()
         if not coordinates_found:
-            st.write('Could not find coordinates for user location. Exiting...')
+            st.write('Could not find coordinates for user location.')
             exit()
-        elif coordinates_found:
-            st.write('Found coordinates for user location!')
+        if not towns_found:
+            st.write('Could not find towns with enough population.')
+            exit()
 
         folium_static(weather_map)
 
-# TODO 1: Add a function to get the best town based on weather score
-# TODO 2: Display weather scores on the map and color code the markers based on the score
 # TODO 3: Add more weather parameters to the calculation (e.g., humidity, cloudiness)
-# TODO 4: Improve the user interface to input location and preferences (wrap in streamlit)
 # TODO 5: Add error handling and logging
 # TODO 6: Optimize the code for performance and readability
 # TODO 7: Fine tune cost function
-# TODO 8: Add Time of day you want to travel
-# TODO 9: Parse input location to be case insensitive
+# TODO 8: Add Time of day and day you want to travel (use forecast)
 # TODO 10: Add return and parameter types to functions
+# TODO 12: Handle exceptions properly
+# TODO 13: Make code more readable
+# TODO 14: Make return values of get_user_location and get_towns_within_radius consistent
