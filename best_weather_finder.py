@@ -19,7 +19,7 @@ def parse_population(population_data: str) -> int:
 
 
 # Function to get towns within a radius
-def get_towns_within_radius(center_lat, center_lon, radius_km, min_population=500):
+def get_towns_within_radius(center_lat: float, center_lon: float, radius_km: int, min_population: int = 500) -> list[Tuple[str, float, float]]:
     overpass_url = "http://overpass-api.de/api/interpreter"
     overpass_query = f"""
     [out:json];
@@ -32,9 +32,6 @@ def get_towns_within_radius(center_lat, center_lon, radius_km, min_population=50
     """
     response = requests.get(overpass_url, params={'data': overpass_query})
     data = response.json()
-
-    status_text.write('Fetching possible destinations...')
-    progress_bar = st.progress(0)
     
     towns = []
     for index, element in enumerate(data['elements']):
@@ -44,12 +41,6 @@ def get_towns_within_radius(center_lat, center_lon, radius_km, min_population=50
             if population > min_population:
                 town = (element['tags']['name'], element['lat'], element['lon'])
                 towns.append(town)
-        
-        progress_percentage = int((index + 1) / len(data['elements']) * 100)
-        progress_bar.progress(progress_percentage)
-    
-    progress_bar.empty()
-    status_text.empty()
                 
     return towns
 
@@ -57,8 +48,6 @@ def get_towns_within_radius(center_lat, center_lon, radius_km, min_population=50
 # Function to get weather data for multiple towns
 def get_weather_data_for_towns(towns: list[Tuple[str, float, float]], api_key: str) -> list[Tuple[str, dict]]:
     weather_data_list = []
-    status_text = st.empty()
-    status_text.write('Fetching weather data...')
     progress_bar = st.progress(0)
 
     for index, town in enumerate(towns):
@@ -91,7 +80,7 @@ def calculate_weather_score(weather_data: dict, weights: dict, user_days_ahead: 
             temp = entry['main']['temp']
             wind_speed = entry['wind']['speed']
             rain = entry['rain'].get('3h', 0) if 'rain' in entry else 0
-
+            print(entry)
             temp_value, wind_value, rain_value = calculate_value(temp, wind_speed, rain)
             total_temp_value += temp_value
             total_wind_value += wind_value
@@ -118,7 +107,7 @@ def calculate_weather_score(weather_data: dict, weights: dict, user_days_ahead: 
 
 
 # Function to calculate value based on temp, wind, rain
-def calculate_value(temp, wind_speed, rain):
+def calculate_value(temp: float, wind_speed: float, rain: float) -> Tuple[float, float, float]:
     if temp > 25:
         temp_value = 1
     elif 20 <= temp <= 25:
@@ -151,7 +140,7 @@ def select_homonymous_locations(locations):
     return selected_option
         
 
-def get_user_coordinates(location) -> Optional[Tuple[float, float]]:
+def get_user_coordinates(location: str) -> Optional[Tuple[float, float]]:
     overpass_url = "http://overpass-api.de/api/interpreter"
     overpass_query = f"""
     [out:json];
@@ -165,9 +154,11 @@ def get_user_coordinates(location) -> Optional[Tuple[float, float]]:
     response = requests.get(overpass_url, params={'data': overpass_query})
     data = response.json()
     print(len(data['elements']))
-    if len(data['elements']) >= 1:
+    if len(data['elements']) == 1:
         found_location = data['elements'][0]
         return found_location
+    elif len(data['elements']) > 1:
+        found_location = select_homonymous_locations(data['elements'])
     else:
         return None
 
@@ -183,7 +174,7 @@ def calculate_weather_scores_and_max(weather_data_list: list[dict], weights: dic
     return weather_scores, max_score
 
 
-def display_on_map(weather_scores, max_score, center_lat, center_lon, radius_km):
+def display_on_map(weather_scores: list[dict], max_score: float, center_lat: float, center_lon: float) -> folium.Map:
         # Visualize on a map
     map_center = [center_lat, center_lon]
     mymap = folium.Map(location=map_center, zoom_start = 9)
@@ -203,38 +194,6 @@ def display_on_map(weather_scores, max_score, center_lat, center_lon, radius_km)
 
     return mymap
 
-
-def find_best_weather(user_location, user_radius, user_population, user_days_ahead):
-    #! Insert your OpenWeatherMap API key here. Create account, activate via email link, API key will be emailed to you.
-    api_key = '88d3e456f87cc1e050630459f9c1a301'
-    user_town = get_user_coordinates(user_location)
-    
-    weather_map = None
-    
-    if user_town is None:
-        return False, True, weather_map
-    else:
-        coordinates_found = True
-    
-    user_lat = user_town['lat']
-    user_lon = user_town['lon']
-    weights = {'temp': 0.5, 'wind': 0.3, 'rain': 0.2}
-    status_text = st.empty()
-    status_text.write('Finding matching destinations, this will take a few seconds...')
-    towns = get_towns_within_radius(user_lat, user_lon, user_radius, user_population)
-    towns.append((user_location, user_lat, user_lon))   
-
-    if(len(towns) == 0):
-        return True, False, weather_map
-    else: 
-        towns_found = True
-    status_text.empty()
-    weather_data_list = get_weather_data_for_towns(towns, api_key)
-    weather_scores, max_score = calculate_weather_scores_and_max(weather_data_list, weights, user_days_ahead)
-    weather_map = display_on_map(weather_scores, max_score, user_lat, user_lon, user_radius)
-
-    return coordinates_found, towns_found, weather_map
-
 if __name__ == "__main__":
     st.title('Best Weather Finder 🏖️')
     st.subheader('Your solution to summer, wherever and whenever!')
@@ -253,23 +212,44 @@ if __name__ == "__main__":
         status_text = st.empty()
         status_text.write('Finding the best weather...')
 
-        coordinates_found, towns_found, weather_map = find_best_weather(user_location, user_radius, user_population, user_days_ahead)
-        
+        user_coordinates = get_user_coordinates(user_location)
+        user_lat = user_coordinates['lat']
+        user_lon = user_coordinates['lon']
+
+        weights = {'temp': 0.5, 'wind': 0.3, 'rain': 0.2}
+
+        status_text = st.empty()
+        status_text.write('Finding matching destinations, this will take a few seconds...')
+
+        towns = get_towns_within_radius(user_lat, user_lon, user_radius, user_population)
+        towns.append((user_location, user_lat, user_lon)) 
+
         status_text.empty()
         
-        if not coordinates_found:
+         #! Insert your OpenWeatherMap API key here. Create account, activate via email link, API key will be emailed to you.
+        api_key = '88d3e456f87cc1e050630459f9c1a301' 
+        status_text.write('Fetching weather data...') 
+        weather_data_list = get_weather_data_for_towns(towns, api_key)
+        status_text = st.empty()
+        weather_scores, max_score = calculate_weather_scores_and_max(weather_data_list, weights, user_days_ahead)
+        
+        weather_map = display_on_map(weather_scores, max_score, user_lat, user_lon)
+        
+        if user_coordinates is None:
             st.write('Could not find coordinates for user location.')
             exit()
-        if not towns_found:
+        if len(towns) == 0:
             st.write('Could not find towns with enough population.')
             exit()
+
         folium_static(weather_map)
 
+
+# TODO 1: Implement handling for multiple locations with the same name
 # TODO 3: Add more weather parameters to the calculation (e.g., humidity, cloudiness)
 # TODO 5: Add error handling and logging
 # TODO 6: Optimize the code for performance and readability
 # TODO 7: Fine tune cost function
-# TODO 10: Add return and parameter types to functions
 # TODO 12: Handle exceptions properly
 # TODO 13: Make code more readable
 # TODO 14: Make return values of get_user_location and get_towns_within_radius consistent
