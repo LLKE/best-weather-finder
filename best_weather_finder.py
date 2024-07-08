@@ -80,7 +80,6 @@ def calculate_weather_score(weather_data: dict, weights: dict, user_days_ahead: 
             temp = entry['main']['temp']
             wind_speed = entry['wind']['speed']
             rain = entry['rain'].get('3h', 0) if 'rain' in entry else 0
-            print(entry)
             temp_value, wind_value, rain_value = calculate_value(temp, wind_speed, rain)
             total_temp_value += temp_value
             total_wind_value += wind_value
@@ -133,34 +132,39 @@ def calculate_value(temp: float, wind_speed: float, rain: float) -> Tuple[float,
 
 
 def select_homonymous_locations(locations):
-    options = []
-    for i, location in enumerate(locations):
-        options[i] = location['tags']['name']
+    options = ["Please select the correct location:"]
+    for location in locations:
+        if 'tags' in location:
+            if 'is_in' in location['tags']:
+                options.append(f'{location['tags']['name']}, {location['tags']['is_in']}')
+            elif 'is_in:state' in location['tags']:
+                options.append(f'{location['tags']['name']}, {location['tags']['is_in:state']}')
+            elif 'wikipedia' in location['tags']:
+                options.append(f'{location['tags']['name']}, {location['tags']['wikipedia']}')
+
     selected_option = st.selectbox('Select the correct location:', options)
-    return selected_option
+    if selected_option == "Please select the correct location:":
+        return None
+
+    selected_option_index = options.index(selected_option)
+    return selected_option_index
         
 
-def get_user_coordinates(location: str) -> Optional[Tuple[float, float]]:
+def get_possible_user_locations(location_name) -> dict:
     overpass_url = "http://overpass-api.de/api/interpreter"
     overpass_query = f"""
     [out:json];
     (
-      node["place"="town"]["name"="{location}"];
-      node["place"="village"]["name"="{location}"];
-      node["place"="city"]["name"="{location}"];
+      node["place"="town"]["name"="{location_name}"];
+      node["place"="village"]["name"="{location_name}"];
+      node["place"="city"]["name"="{location_name}"];
     );
     out body;
     """
     response = requests.get(overpass_url, params={'data': overpass_query})
     data = response.json()
-    print(len(data['elements']))
-    if len(data['elements']) == 1:
-        found_location = data['elements'][0]
-        return found_location
-    elif len(data['elements']) > 1:
-        found_location = select_homonymous_locations(data['elements'])
-    else:
-        return None
+    return data
+
 
 def calculate_weather_scores_and_max(weather_data_list: list[dict], weights: dict, user_days_ahead: int = 0) -> Tuple[list, float]:
     weather_scores = []
@@ -197,36 +201,61 @@ def display_on_map(weather_scores: list[dict], max_score: float, center_lat: flo
 if __name__ == "__main__":
     st.title('Best Weather Finder 🏖️')
     st.subheader('Your solution to summer, wherever and whenever!')
-    user_location = st.text_input('Where do you need to escape from? e.g. New York')
-    
-    user_location = user_location.title()
+    user_location_name = st.text_input('Where do you need to escape from? e.g. New York')
+    user_location_name = user_location_name.title()
+
+    if st.button('Find My Location') or 'multiple_user_locations' in st.session_state and st.session_state['multiple_user_locations'] == True: 
+            
+        if not user_location_name.strip(): # Handle empty input
+            st.error('Please enter a valid location.')
+            st.stop()
+
+        possible_user_locations = get_possible_user_locations(user_location_name)
+        user_coordinates = None
+        if len(possible_user_locations['elements']) > 1:
+            st.write('Multiple locations found with the same name.')
+            user_location_index = select_homonymous_locations(possible_user_locations['elements'])
+            st.session_state['multiple_user_locations'] = True
+            if user_location_index is None:
+                st.stop()
+            user_coordinates = possible_user_locations['elements'][user_location_index]
+        elif len(possible_user_locations['elements']) == 1: 
+            st.session_state['multiple_user_locations'] = False
+            user_coordinates = possible_user_locations['elements'][0]
+
+        if user_coordinates is None:
+            st.error('Could not find coordinates for user location.')
+            exit()
+        
+        st.write('Found your location!')
+        user_lat = user_coordinates['lat']
+        user_lon = user_coordinates['lon']
+
+    # Don't display below if correct location is not selected
+    if 'multiple_user_locations' not in st.session_state:
+        st.stop()
+
     user_radius = st.slider('How far are you willing to travel?', 0, 100, 5)
     user_population = st.slider('Are you a city person (Minimum population of destination)?', 0, 1000000, 500)
     user_days_ahead = st.slider('In how many days are you planning to travel?', 0, 5, 0)
 
     if st.button('Find Best Weather!'):
-        if not user_location.strip(): # Handle empty input
-            st.error('Please enter a valid location.')
-            st.stop()
+
 
         status_text = st.empty()
         status_text.write('Finding the best weather...')
-
-        user_coordinates = get_user_coordinates(user_location)
-        user_lat = user_coordinates['lat']
-        user_lon = user_coordinates['lon']
 
         weights = {'temp': 0.5, 'wind': 0.3, 'rain': 0.2}
 
         status_text = st.empty()
         status_text.write('Finding matching destinations, this will take a few seconds...')
-
+        st.write(user_lat, user_lon)
         towns = get_towns_within_radius(user_lat, user_lon, user_radius, user_population)
-        towns.append((user_location, user_lat, user_lon)) 
-
-        status_text.empty()
+        towns.append((user_location_name, user_lat, user_lon)) 
+        if len(towns) == 1:
+            st.write('Could not find towns with such a large population')
         
-         #! Insert your OpenWeatherMap API key here. Create account, activate via email link, API key will be emailed to you.
+        #! Insert your OpenWeatherMap API key here. Create account, activate via email link, API key will be emailed to you.
         api_key = '88d3e456f87cc1e050630459f9c1a301' 
         status_text.write('Fetching weather data...') 
         weather_data_list = get_weather_data_for_towns(towns, api_key)
@@ -234,23 +263,14 @@ if __name__ == "__main__":
         weather_scores, max_score = calculate_weather_scores_and_max(weather_data_list, weights, user_days_ahead)
         
         weather_map = display_on_map(weather_scores, max_score, user_lat, user_lon)
-        
-        if user_coordinates is None:
-            st.write('Could not find coordinates for user location.')
-            exit()
-        if len(towns) == 0:
-            st.write('Could not find towns with enough population.')
-            exit()
 
         folium_static(weather_map)
 
+        st.session_state.clear()
 
-# TODO 1: Implement handling for multiple locations with the same name
-# TODO 3: Add more weather parameters to the calculation (e.g., humidity, cloudiness)
-# TODO 5: Add error handling and logging
-# TODO 6: Optimize the code for performance and readability
-# TODO 7: Fine tune cost function
-# TODO 12: Handle exceptions properly
+
+# TODO 1: Fix issue with Aachen (and other locations that only exist once)
+# TODO 2: Fix wrong indexing when selecting homonymous locations
+# TODO 2: Let user determine weights for weather parameters
+# TODO 6: Optimize the code for readability
 # TODO 13: Make code more readable
-# TODO 14: Make return values of get_user_location and get_towns_within_radius consistent
-# TODO 15: Make everything streamlit related in main script and not in functions if possible
