@@ -203,9 +203,11 @@ if __name__ == "__main__":
     st.subheader('Your solution to summer, wherever and whenever!')
     user_location_name = st.text_input('Where do you need to escape from? e.g. New York')
     user_location_name = user_location_name.title()
+    user_coordinates = None
+    user_lat = None
+    user_lon = None
 
-    if st.button('Find My Location') or 'multiple_user_locations' in st.session_state and st.session_state['multiple_user_locations'] == True: 
-            
+    if st.button('Find My Location') or ('multiple_user_locations' in st.session_state and st.session_state['multiple_user_locations'] == True):             
         if not user_location_name.strip(): # Handle empty input
             st.error('Please enter a valid location.')
             st.stop()
@@ -222,6 +224,8 @@ if __name__ == "__main__":
         elif len(possible_user_locations['elements']) == 1: 
             st.session_state['multiple_user_locations'] = False
             user_coordinates = possible_user_locations['elements'][0]
+        else: 
+            st.session_state['multiple_user_locations'] = False
 
         if user_coordinates is None:
             st.error('Could not find coordinates for user location.')
@@ -230,6 +234,8 @@ if __name__ == "__main__":
         st.write('Found your location!')
         user_lat = user_coordinates['lat']
         user_lon = user_coordinates['lon']
+        st.session_state['user_lat'] = user_lat
+        st.session_state['user_lon'] = user_lon
 
     # Don't display below if correct location is not selected
     if 'multiple_user_locations' not in st.session_state:
@@ -238,9 +244,10 @@ if __name__ == "__main__":
     user_radius = st.slider('How far are you willing to travel?', 0, 100, 5)
     user_population = st.slider('Are you a city person (Minimum population of destination)?', 0, 1000000, 500)
     user_days_ahead = st.slider('In how many days are you planning to travel?', 0, 5, 0)
+    user_lat = st.session_state['user_lat']
+    user_lon = st.session_state['user_lon']
 
     if st.button('Find Best Weather!'):
-
 
         status_text = st.empty()
         status_text.write('Finding the best weather...')
@@ -249,7 +256,6 @@ if __name__ == "__main__":
 
         status_text = st.empty()
         status_text.write('Finding matching destinations, this will take a few seconds...')
-        st.write(user_lat, user_lon)
         towns = get_towns_within_radius(user_lat, user_lon, user_radius, user_population)
         towns.append((user_location_name, user_lat, user_lon)) 
         if len(towns) == 1:
