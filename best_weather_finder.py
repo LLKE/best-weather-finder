@@ -296,5 +296,7 @@ if __name__ == "__main__":
 
         st.session_state.clear()
 
-#TODO 1: Add explanation how the weather score is calculated
+# TODO 1: Add explanation how the weather score is calculated
 # TODO 2: Let user determine weights for weather parameters (maybe in side bar)
+# TODO 3: Design
+# TODO 4: Fine tune cost function
