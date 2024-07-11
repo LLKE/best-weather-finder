@@ -18,6 +18,13 @@ def parse_population(population_data: str) -> int:
     return population
 
 
+def parse_location(location_name: str) -> str:
+    words = location_name.split()
+    filtered_words = [word.rstrip(',') for word in words if ':' not in word]
+    parsed_location = ' '.join(filtered_words)
+    return parsed_location
+
+
 # Function to get towns within a radius
 def get_towns_within_radius(center_lat: float, center_lon: float, radius_km: int, min_population: int = 500) -> list[Tuple[str, float, float]]:
     overpass_url = "http://overpass-api.de/api/interpreter"
@@ -34,9 +41,8 @@ def get_towns_within_radius(center_lat: float, center_lon: float, radius_km: int
     data = response.json()
     
     towns = []
-    for index, element in enumerate(data['elements']):
+    for element in data['elements']:
         if 'tags' in element and 'population' in element['tags']:
-            #! Population may contain letters as well!
             population = parse_population(element['tags']['population'])
             if population > min_population:
                 town = (element['tags']['name'], element['lat'], element['lon'])
@@ -132,21 +138,23 @@ def calculate_value(temp: float, wind_speed: float, rain: float) -> Tuple[float,
 
 
 def select_homonymous_locations(locations):
-    options = ["Please select the correct location:"]
-    for location in locations:
+    options = []
+
+    for i, location in enumerate(locations):
         if 'tags' in location:
             if 'is_in' in location['tags']:
-                options.append(f'{location['tags']['name']}, {location['tags']['is_in']}')
+                options.append(f'{i}: {location['tags']['name']}, {location['tags']['is_in']}')
             elif 'is_in:state' in location['tags']:
-                options.append(f'{location['tags']['name']}, {location['tags']['is_in:state']}')
+                options.append(f'{i}: {location['tags']['name']}, {location['tags']['is_in:state']}')
             elif 'wikipedia' in location['tags']:
-                options.append(f'{location['tags']['name']}, {location['tags']['wikipedia']}')
-
+                options.append(f'{i}: {location['tags']['name']}, {parse_location(location['tags']['wikipedia'])}')
+            else:
+                options.append(f'{i}: {location['tags']['name']}')
     selected_option = st.selectbox('Select the correct location:', options)
-    if selected_option == "Please select the correct location:":
+    if selected_option == '':
         return None
 
-    selected_option_index = options.index(selected_option)
+    selected_option_index = options.index(selected_option) - 1
     return selected_option_index
         
 
@@ -206,7 +214,7 @@ if __name__ == "__main__":
     user_coordinates = None
     user_lat = None
     user_lon = None
-
+    st.write('Note: If you cannot find your location, find out what it is called in OpenStreetMap: https://www.openstreetmap.org/')
     if st.button('Find My Location') or ('multiple_user_locations' in st.session_state and st.session_state['multiple_user_locations'] == True):             
         if not user_location_name.strip(): # Handle empty input
             st.error('Please enter a valid location.')
@@ -274,9 +282,7 @@ if __name__ == "__main__":
 
         st.session_state.clear()
 
-
-# TODO 1: Fix issue with Aachen (and other locations that only exist once)
+# TODO 1: Display all locations on a map when there are multiple with the same name, and mark them with the index of the location
+# TODO 3: Name of user location is not displayed on the map
 # TODO 2: Fix wrong indexing when selecting homonymous locations
 # TODO 2: Let user determine weights for weather parameters
-# TODO 6: Optimize the code for readability
-# TODO 13: Make code more readable
