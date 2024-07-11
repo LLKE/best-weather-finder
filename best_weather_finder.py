@@ -137,20 +137,30 @@ def calculate_value(temp: float, wind_speed: float, rain: float) -> Tuple[float,
     return temp_value, wind_value, rain_value
 
 
-def select_homonymous_locations(locations):
-    options = []
+def display_homonymous_location_map(locations: list[dict]) -> folium.Map:
+    # Visualize on a map
+    mymap = folium.Map(zoom_start = 1)
+    
+    for index, location in enumerate(locations):
+        folium.Marker(
+            location=[location['lat'], location['lon']],
+            popup=f"{index}",
+            icon=folium.Icon(color='green')  
+        ).add_to(mymap)
 
-    for i, location in enumerate(locations):
-        if 'tags' in location:
-            if 'is_in' in location['tags']:
-                options.append(f'{i}: {location['tags']['name']}, {location['tags']['is_in']}')
-            elif 'is_in:state' in location['tags']:
-                options.append(f'{i}: {location['tags']['name']}, {location['tags']['is_in:state']}')
-            elif 'wikipedia' in location['tags']:
-                options.append(f'{i}: {location['tags']['name']}, {parse_location(location['tags']['wikipedia'])}')
-            else:
-                options.append(f'{i}: {location['tags']['name']}')
-    selected_option = st.selectbox('Select the correct location:', options)
+    return mymap
+
+
+def select_homonymous_locations(locations):
+    options = ['']
+
+    for i, _ in enumerate(locations):
+        options.append(i)
+    
+    homonymous_locations_map = display_homonymous_location_map(locations)
+    folium_static(homonymous_locations_map)
+
+    selected_option = st.selectbox('Click on the location on the map and select the index here:', options)
     if selected_option == '':
         return None
 
@@ -186,7 +196,7 @@ def calculate_weather_scores_and_max(weather_data_list: list[dict], weights: dic
     return weather_scores, max_score
 
 
-def display_on_map(weather_scores: list[dict], max_score: float, center_lat: float, center_lon: float) -> folium.Map:
+def display_best_weather_map(weather_scores: list[dict], max_score: float, center_lat: float, center_lon: float) -> folium.Map:
         # Visualize on a map
     map_center = [center_lat, center_lon]
     mymap = folium.Map(location=map_center, zoom_start = 9)
@@ -213,8 +223,8 @@ if __name__ == "__main__":
     user_location_name = user_location_name.title()
     user_coordinates = None
     user_lat = None
-    user_lon = None
-    st.write('Note: If you cannot find your location, find out what it is called in OpenStreetMap: https://www.openstreetmap.org/')
+    user_lon = None 
+
     if st.button('Find My Location') or ('multiple_user_locations' in st.session_state and st.session_state['multiple_user_locations'] == True):             
         if not user_location_name.strip(): # Handle empty input
             st.error('Please enter a valid location.')
@@ -237,9 +247,11 @@ if __name__ == "__main__":
 
         if user_coordinates is None:
             st.error('Could not find coordinates for user location.')
+            st.info('Note: If you cannot find your location, find out what it is called in OpenStreetMap: https://www.openstreetmap.org/', icon='ℹ️')
             exit()
         
-        st.write('Found your location!')
+        
+        
         user_lat = user_coordinates['lat']
         user_lon = user_coordinates['lon']
         st.session_state['user_lat'] = user_lat
@@ -248,6 +260,8 @@ if __name__ == "__main__":
     # Don't display below if correct location is not selected
     if 'multiple_user_locations' not in st.session_state:
         st.stop()
+
+    st.success('Found your location!', icon="✅")
 
     user_radius = st.slider('How far are you willing to travel?', 0, 100, 5)
     user_population = st.slider('Are you a city person (Minimum population of destination)?', 0, 1000000, 500)
@@ -262,7 +276,6 @@ if __name__ == "__main__":
 
         weights = {'temp': 0.5, 'wind': 0.3, 'rain': 0.2}
 
-        status_text = st.empty()
         status_text.write('Finding matching destinations, this will take a few seconds...')
         towns = get_towns_within_radius(user_lat, user_lon, user_radius, user_population)
         towns.append((user_location_name, user_lat, user_lon)) 
@@ -276,13 +289,12 @@ if __name__ == "__main__":
         status_text = st.empty()
         weather_scores, max_score = calculate_weather_scores_and_max(weather_data_list, weights, user_days_ahead)
         
-        weather_map = display_on_map(weather_scores, max_score, user_lat, user_lon)
+        status_text.write('Here you go!')
+        weather_map = display_best_weather_map(weather_scores, max_score, user_lat, user_lon)
 
         folium_static(weather_map)
 
         st.session_state.clear()
 
-# TODO 1: Display all locations on a map when there are multiple with the same name, and mark them with the index of the location
-# TODO 3: Name of user location is not displayed on the map
-# TODO 2: Fix wrong indexing when selecting homonymous locations
-# TODO 2: Let user determine weights for weather parameters
+#TODO 1: Add explanation how the weather score is calculated
+# TODO 2: Let user determine weights for weather parameters (maybe in side bar)
