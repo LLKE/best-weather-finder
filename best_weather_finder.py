@@ -224,8 +224,6 @@ if __name__ == "__main__":
 
     if not api_key:
         st.error("API_KEY environment variable is not set.")
-    else:
-        st.write(f"Your API Key is: {api_key}")
 
     st.title('Best Weather Finder 🏖️')
     st.subheader('Your solution to summer, wherever and whenever!')
