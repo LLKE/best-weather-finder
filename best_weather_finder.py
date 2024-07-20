@@ -3,7 +3,6 @@ import folium
 import streamlit as st
 import re
 import os
-from dotenv import load_dotenv
 from geopy.distance import geodesic
 from datetime import datetime, timezone, timedelta
 from streamlit_folium import folium_static
@@ -293,7 +292,6 @@ if __name__ == "__main__":
         if len(towns) == 1:
             st.write('Could not find towns with such a large population')
         
-        #! Insert your OpenWeatherMap API key here. Create account, activate via email link, API key will be emailed to you. 
         status_text.write('Fetching weather data...') 
         weather_data_list = get_weather_data_for_towns(towns, api_key)
         status_text = st.empty()
