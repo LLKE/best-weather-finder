@@ -2,6 +2,8 @@ import requests
 import folium
 import streamlit as st
 import re
+import os
+from dotenv import load_dotenv
 from geopy.distance import geodesic
 from datetime import datetime, timezone, timedelta
 from streamlit_folium import folium_static
@@ -217,6 +219,15 @@ def display_best_weather_map(weather_scores: list[dict], max_score: float, cente
     return mymap
 
 if __name__ == "__main__":
+
+    # Access the API key from the environment variables
+    api_key = os.getenv('API_KEY')
+
+    if not api_key:
+        st.error("API_KEY environment variable is not set.")
+    else:
+        st.write(f"Your API Key is: {api_key}")
+
     st.title('Best Weather Finder 🏖️')
     st.subheader('Your solution to summer, wherever and whenever!')
     user_location_name = st.text_input('Where do you need to escape from? e.g. New York')
@@ -282,8 +293,7 @@ if __name__ == "__main__":
         if len(towns) == 1:
             st.write('Could not find towns with such a large population')
         
-        #! Insert your OpenWeatherMap API key here. Create account, activate via email link, API key will be emailed to you.
-        api_key = '88d3e456f87cc1e050630459f9c1a301' 
+        #! Insert your OpenWeatherMap API key here. Create account, activate via email link, API key will be emailed to you. 
         status_text.write('Fetching weather data...') 
         weather_data_list = get_weather_data_for_towns(towns, api_key)
         status_text = st.empty()
