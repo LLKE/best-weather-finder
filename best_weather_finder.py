@@ -228,6 +228,17 @@ if __name__ == "__main__":
     st.title('Best Weather Finder 🏖️')
     st.subheader('Your solution to summer, wherever and whenever!')
     user_location_name = st.text_input('Where do you need to escape from? e.g. New York')
+
+    st.sidebar.title("Preferences")
+    st.sidebar.markdown("### Weather\n---")
+    temp_pref = st.sidebar.slider('Temperature', min_value=0, max_value=100, value=50)
+    wind_speed_pref = st.sidebar.slider('Wind Speed', min_value=0, max_value=100, value=20)
+    rainfall_pref = st.sidebar.slider('Rainfall', min_value=0, max_value=100, value=30)
+    weather_pref_sum = temp_pref + wind_speed_pref + rainfall_pref
+    temp_pref /= weather_pref_sum
+    wind_speed_pref /= weather_pref_sum
+    rainfall_pref /= weather_pref_sum
+
     user_location_name = user_location_name.title()
     user_coordinates = None
     user_lat = None
@@ -256,9 +267,7 @@ if __name__ == "__main__":
         if user_coordinates is None:
             st.error('Could not find coordinates for user location.')
             st.info('Note: If you cannot find your location, find out what it is called in OpenStreetMap: https://www.openstreetmap.org/', icon='ℹ️')
-            exit()
-        
-        
+            st.stop()
         
         user_lat = user_coordinates['lat']
         user_lon = user_coordinates['lon']
@@ -270,7 +279,7 @@ if __name__ == "__main__":
         st.stop()
 
     st.success('Found your location!', icon="✅")
-
+        
     user_radius = st.slider('How far are you willing to travel?', 0, 100, 5)
     user_population = st.slider('Are you a city person (Minimum population of destination)?', 0, 1000000, 500)
     user_days_ahead = st.slider('In how many days are you planning to travel?', 0, 5, 0)
@@ -282,13 +291,16 @@ if __name__ == "__main__":
         status_text = st.empty()
         status_text.write('Finding the best weather...')
 
-        weights = {'temp': 0.5, 'wind': 0.3, 'rain': 0.2}
+        weights = {'temp': temp_pref, 'wind': wind_speed_pref, 'rain': rainfall_pref}
 
         status_text.write('Finding matching destinations, this will take a few seconds...')
         towns = get_towns_within_radius(user_lat, user_lon, user_radius, user_population)
         towns.append((user_location_name, user_lat, user_lon)) 
+        print(towns)
         if len(towns) == 1:
-            st.write('Could not find towns with such a large population')
+            status_text.empty()
+            st.info('Could not find towns with such a large population. Looks like staying at home is the best option!', icon="ℹ️")
+            st.stop()
         
         status_text.write('Fetching weather data...') 
         weather_data_list = get_weather_data_for_towns(towns, api_key)
@@ -300,9 +312,40 @@ if __name__ == "__main__":
 
         folium_static(weather_map)
 
-        st.session_state.clear()
+        st.session_state['user_lat'] = None
+        st.session_state['user_lon'] = None
+        st.session_state['multiple_user_locations'] = None
+
+        weather_score_explanation = """
+        ## Weather Score Calculation Explained
+
+        1. **Data Aggregation**: For the selected date, the system aggregates weather data including temperature, wind speed, and rainfall from Open Weather Map forecast data.
+
+        2. **Value Calculation**:
+        - **Temperature**: A value is assigned based on the temperature:
+            - Above 25°C: High preference.
+            - Between 20°C and 25°C: Moderate preference.
+            - Below 20°C: Low preference.
+        - **Wind Speed**: A value is assigned based on wind speed:
+            - Below 5 km/h: High preference.
+            - Between 5 km/h and 10 km/h: Moderate preference.
+            - Above 10 km/h: Low preference.
+        - **Rainfall**: A value is assigned based on rainfall:
+            - No rain: High preference.
+            - Below 5 mm: Moderate preference (score of 0.5).
+            - Above 5 mm: Low preference (score of 0).
+
+        3. **Normalization and Weighting**: Each of the calculated values (temperature, wind speed, and rainfall) is normalized across the day. Then, a weighted sum of these normalized values is calculated based on your selected importance for each weather parameter.
+
+        4. **Final Score**: The total score is normalized to a 0-1 range, providing a final weather score that helps you understand the overall weather condition for the selected date.
+
+        """
+
+        with st.expander("How is the weather score calculated?"):
+            st.markdown(weather_score_explanation)
 
 # TODO 1: Add explanation how the weather score is calculated
+# TODO 3: Fix bug concerning re-selecting population: If user selects a different population when the first population yielded 
+# no results, the app will not re-calculate the coordinates
 # TODO 2: Let user determine weights for weather parameters (maybe in side bar)
-# TODO 3: Design
 # TODO 4: Fine tune cost function
