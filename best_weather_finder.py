@@ -230,10 +230,11 @@ if __name__ == "__main__":
 
     st.sidebar.title("Preferences")
     st.sidebar.markdown("### Weather\n---")
-
-    temp_pref = st.sidebar.slider('Temperature', min_value=0, max_value=100, value=50)
-    wind_speed_pref = st.sidebar.slider('Wind Speed', min_value=0, max_value=100, value=20)
-    rainfall_pref = st.sidebar.slider('Rainfall', min_value=0, max_value=100, value=30)
+    st.sidebar.markdown("How important are the following weather conditions to you?")
+    st.sidebar.markdown("0: Not important, 100: Very important")
+    temp_pref = st.sidebar.slider('Pleasant Temperature', min_value=0, max_value=100, value=50)
+    wind_speed_pref = st.sidebar.slider('Low Wind Speeds', min_value=0, max_value=100, value=20)
+    rainfall_pref = st.sidebar.slider('Low Rainfall', min_value=0, max_value=100, value=30)
     weather_pref_sum = temp_pref + wind_speed_pref + rainfall_pref
     temp_pref /= weather_pref_sum
     wind_speed_pref /= weather_pref_sum
