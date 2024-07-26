@@ -197,11 +197,7 @@ def calculate_weather_scores_and_max(weather_data_list: list[dict], weights: dic
     return weather_scores, max_score
 
 
-def display_best_weather_map(weather_scores: list[dict], max_score: float, center_lat: float, center_lon: float) -> folium.Map:
-        # Visualize on a map
-    map_center = [center_lat, center_lon]
-    mymap = folium.Map(location=map_center, zoom_start = 9)
-    
+def add_markers_to_weather_map(weather_scores: list[dict], max_score: float, mymap: folium.Map):
     for weather_score in weather_scores:
         if weather_score[2] == max_score:
             folium.Marker(
@@ -210,7 +206,49 @@ def display_best_weather_map(weather_scores: list[dict], max_score: float, cente
                 icon=folium.Icon(color='green')  
             ).add_to(mymap)
 
-    return mymap
+
+def display_best_weather_map(weather_scores: list[dict], max_score: float, center_lat: float, center_lon: float) -> folium.Map:
+    map_center = [center_lat, center_lon]
+    mymap = folium.Map(location=map_center, zoom_start = 9)
+    add_markers_to_weather_map(weather_scores, max_score, mymap)
+    folium_static(weather_map)
+
+
+def display_score_calculation_explanation():
+    try:
+        with open('weather_score_explanation.md', 'r') as explanation_file:
+            weather_score_explanation = explanation_file.read()
+        st.markdown(weather_score_explanation)
+    except FileNotFoundError:
+        st.error("Error: The file 'weather_score_explanation.md' was not found.")
+    except IOError:
+        st.error("Error: An error occurred while reading the file 'weather_score_explanation.md'.")
+
+
+def get_weather_preferences_from_ui() -> Tuple[float, float, float]:
+    temp_pref        = st.sidebar.slider('Pleasant Temperature', min_value=0, max_value=100, value=50)
+    wind_speed_pref  = st.sidebar.slider('Low Wind Speeds', min_value=0, max_value=100, value=20)
+    rainfall_pref    = st.sidebar.slider('Low Rainfall', min_value=0, max_value=100, value=30)
+    weather_pref_sum = temp_pref + wind_speed_pref + rainfall_pref
+    temp_pref       /= weather_pref_sum
+    wind_speed_pref /= weather_pref_sum
+    rainfall_pref   /= weather_pref_sum
+
+    return temp_pref, wind_speed_pref, rainfall_pref
+    
+
+def get_location_preferences_from_ui() -> Tuple[int, int, int]: 
+    user_radius     = st.sidebar.slider('How far are you willing to travel?', 0, 100, 5)
+    user_population = st.sidebar.slider('Are you a city person (Minimum population of destination)?', 0, 1000000, 500)
+    user_days_ahead = st.sidebar.slider('In how many days are you planning to travel?', 0, 5, 0)
+    
+    return user_radius, user_population, user_days_ahead
+
+
+def get_user_location_name_from_ui():
+    user_location_name = st.text_input('Where do you need to escape from? e.g. New York')
+    return user_location_name.title()
+
 
 if __name__ == "__main__":
 
@@ -226,7 +264,6 @@ if __name__ == "__main__":
     st.title('Best Weather Finder 🏖️')
     st.subheader('Your solution to summer, wherever and whenever!')
 
-
     ####################### Preferences #######################
 
     st.sidebar.title("Preferences")
@@ -234,38 +271,33 @@ if __name__ == "__main__":
     st.sidebar.markdown("How important are the following weather conditions to you?")
     st.sidebar.markdown("0: Not important, 100: Very important")
 
-    temp_pref        = st.sidebar.slider('Pleasant Temperature', min_value=0, max_value=100, value=50)
-    wind_speed_pref  = st.sidebar.slider('Low Wind Speeds', min_value=0, max_value=100, value=20)
-    rainfall_pref    = st.sidebar.slider('Low Rainfall', min_value=0, max_value=100, value=30)
-    weather_pref_sum = temp_pref + wind_speed_pref + rainfall_pref
-    temp_pref       /= weather_pref_sum
-    wind_speed_pref /= weather_pref_sum
-    rainfall_pref   /= weather_pref_sum
+    temp_pref, wind_speed_pref, rainfall_pref = get_weather_preferences_from_ui()
 
     st.sidebar.markdown("### Travel\n---")
-    user_radius     = st.sidebar.slider('How far are you willing to travel?', 0, 100, 5)
-    user_population = st.sidebar.slider('Are you a city person (Minimum population of destination)?', 0, 1000000, 500)
-    user_days_ahead = st.sidebar.slider('In how many days are you planning to travel?', 0, 5, 0)
+
+    user_radius, user_population, user_days_ahead = get_location_preferences_from_ui()
+    
+    ####################### Finding Location #######################
 
     user_coordinates = None
     user_lat         = None
     user_lon         = None 
 
-    ####################### Finding Location #######################
-
-    user_location_name = st.text_input('Where do you need to escape from? e.g. New York')
-    user_location_name = user_location_name.title()
+    user_location_name = get_user_location_name_from_ui()
 
     # If there are multiple locations with the same name, this part of the script 
     # must be executed again to determine the coordinates of the selected location
-    if st.button('Find My Location') or ('multiple_user_locations' in st.session_state and st.session_state['multiple_user_locations'] is True):             
+    if st.button('Find My Location'):             
         if not user_location_name.strip(): # Handle empty input
             st.error('Please enter a location.')
             st.stop()
 
         possible_user_locations = get_possible_user_locations(user_location_name)
+        st.session_state['fetched_user_locations'] = True
+        st.session_state['possible_user_locations'] = possible_user_locations
 
-        user_coordinates = None
+    if 'fetched_user_locations' in st.session_state and st.session_state['fetched_user_locations'] is True:
+        possible_user_locations = st.session_state['possible_user_locations']
         if len(possible_user_locations['elements']) > 1:
             st.write('Multiple locations found with the same name.')
             user_location_index = select_homonymous_locations(possible_user_locations['elements'])
@@ -273,24 +305,20 @@ if __name__ == "__main__":
             if user_location_index is None:
                 st.stop()
             user_coordinates = possible_user_locations['elements'][user_location_index]
-        else: 
+        elif len(possible_user_locations['elements']) == 1: 
             st.session_state['multiple_user_locations'] = False
             user_coordinates = possible_user_locations['elements'][0]
-
-        if user_coordinates is None:
+        else:
             st.error('Could not find coordinates for user location.')
             st.info('Note: If you cannot find your location, find out what it is called in OpenStreetMap: https://www.openstreetmap.org/', icon='ℹ️')
             st.stop()
-        
+            
         user_lat = user_coordinates['lat']
         user_lon = user_coordinates['lon']
         st.session_state['user_lat'] = user_lat
         st.session_state['user_lon'] = user_lon
-        print(user_lat, user_lon)
 
-    #! Issue: The above part of the script is not executed again when the user presses the find best weather button 
-    # Don't display below if correct location is not selected
-    if 'multiple_user_locations' not in st.session_state:
+    if 'fetched_user_locations' not in st.session_state:
         st.stop()
 
     st.success('Found your location!', icon="✅")
@@ -306,8 +334,6 @@ if __name__ == "__main__":
         sub_status_text = st.empty()
         status_text.write('Finding the best weather...')
 
-        weights = {'temp': temp_pref, 'wind': wind_speed_pref, 'rain': rainfall_pref}
-        print (user_lat, user_lon, user_radius, user_population)
         with st.spinner('Finding matching destinations, this will take a few seconds...'):
             towns = get_towns_within_radius(user_lat, user_lon, user_radius, user_population)  
 
@@ -320,21 +346,15 @@ if __name__ == "__main__":
         weather_data_list = get_weather_data_for_towns(towns, api_key)
         sub_status_text = st.empty()
 
+        weights = {'temp': temp_pref, 'wind': wind_speed_pref, 'rain': rainfall_pref}
         weather_scores, max_score = calculate_weather_scores_and_max(weather_data_list, weights, user_days_ahead)
         
         sub_status_text.empty()
         status_text.write('Here you go!')
         weather_map = display_best_weather_map(weather_scores, max_score, user_lat, user_lon)
 
-        folium_static(weather_map)
-
         st.session_state['multiple_user_locations'] = None
+        with st.expander('How is the weather score calculated?'):
+            display_score_calculation_explanation()
 
-        with open('weather_score_explanation.md', 'r') as explanation_file:
-            weather_score_explanation = explanation_file.read()
-
-        with st.expander("How is the weather score calculated?"):
-            st.markdown(weather_score_explanation)
-
-# TODO 3: Fix bug concerning re-selecting population: If user selects a different population when the first population yielded 
-# no results, the app will not re-calculate the coordinates
+# TODO: Turn button clicks into callbacks
