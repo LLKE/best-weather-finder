@@ -207,11 +207,12 @@ def add_markers_to_weather_map(weather_scores: list[dict], max_score: float, mym
             ).add_to(mymap)
 
 
+
 def display_best_weather_map(weather_scores: list[dict], max_score: float, center_lat: float, center_lon: float) -> folium.Map:
     map_center = [center_lat, center_lon]
     mymap = folium.Map(location=map_center, zoom_start = 9)
     add_markers_to_weather_map(weather_scores, max_score, mymap)
-    folium_static(weather_map)
+    folium_static(mymap)
 
 
 def display_score_calculation_explanation():
