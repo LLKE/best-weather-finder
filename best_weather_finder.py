@@ -214,7 +214,8 @@ def display_best_weather_map(weather_scores: list[dict], max_score: float, cente
 
 if __name__ == "__main__":
 
-    # Access the API key from the environment variables
+    ####################### Setup #######################
+
     api_key = os.getenv('API_KEY')
 
     if not api_key:
@@ -225,30 +226,38 @@ if __name__ == "__main__":
     st.title('Best Weather Finder 🏖️')
     st.subheader('Your solution to summer, wherever and whenever!')
 
-    user_location_name = st.text_input('Where do you need to escape from? e.g. New York')
-    user_location_name = user_location_name.title()
+
+    ####################### Preferences #######################
 
     st.sidebar.title("Preferences")
     st.sidebar.markdown("### Weather\n---")
     st.sidebar.markdown("How important are the following weather conditions to you?")
     st.sidebar.markdown("0: Not important, 100: Very important")
-    temp_pref = st.sidebar.slider('Pleasant Temperature', min_value=0, max_value=100, value=50)
-    wind_speed_pref = st.sidebar.slider('Low Wind Speeds', min_value=0, max_value=100, value=20)
-    rainfall_pref = st.sidebar.slider('Low Rainfall', min_value=0, max_value=100, value=30)
+
+    temp_pref        = st.sidebar.slider('Pleasant Temperature', min_value=0, max_value=100, value=50)
+    wind_speed_pref  = st.sidebar.slider('Low Wind Speeds', min_value=0, max_value=100, value=20)
+    rainfall_pref    = st.sidebar.slider('Low Rainfall', min_value=0, max_value=100, value=30)
     weather_pref_sum = temp_pref + wind_speed_pref + rainfall_pref
-    temp_pref /= weather_pref_sum
+    temp_pref       /= weather_pref_sum
     wind_speed_pref /= weather_pref_sum
-    rainfall_pref /= weather_pref_sum
+    rainfall_pref   /= weather_pref_sum
 
     st.sidebar.markdown("### Travel\n---")
-    user_radius = st.sidebar.slider('How far are you willing to travel?', 0, 100, 5)
+    user_radius     = st.sidebar.slider('How far are you willing to travel?', 0, 100, 5)
     user_population = st.sidebar.slider('Are you a city person (Minimum population of destination)?', 0, 1000000, 500)
     user_days_ahead = st.sidebar.slider('In how many days are you planning to travel?', 0, 5, 0)
 
     user_coordinates = None
-    user_lat = None
-    user_lon = None 
+    user_lat         = None
+    user_lon         = None 
 
+    ####################### Finding Location #######################
+
+    user_location_name = st.text_input('Where do you need to escape from? e.g. New York')
+    user_location_name = user_location_name.title()
+
+    # If there are multiple locations with the same name, this part of the script 
+    # must be executed again to determine the coordinates of the selected location
     if st.button('Find My Location') or ('multiple_user_locations' in st.session_state and st.session_state['multiple_user_locations'] is True):             
         if not user_location_name.strip(): # Handle empty input
             st.error('Please enter a location.')
@@ -264,11 +273,9 @@ if __name__ == "__main__":
             if user_location_index is None:
                 st.stop()
             user_coordinates = possible_user_locations['elements'][user_location_index]
-        elif len(possible_user_locations['elements']) == 1: 
-            st.session_state['multiple_user_locations'] = False
-            user_coordinates = possible_user_locations['elements'][0]
         else: 
             st.session_state['multiple_user_locations'] = False
+            user_coordinates = possible_user_locations['elements'][0]
 
         if user_coordinates is None:
             st.error('Could not find coordinates for user location.')
@@ -279,24 +286,28 @@ if __name__ == "__main__":
         user_lon = user_coordinates['lon']
         st.session_state['user_lat'] = user_lat
         st.session_state['user_lon'] = user_lon
+        print(user_lat, user_lon)
 
+    #! Issue: The above part of the script is not executed again when the user presses the find best weather button 
     # Don't display below if correct location is not selected
     if 'multiple_user_locations' not in st.session_state:
         st.stop()
 
     st.success('Found your location!', icon="✅")
-        
-    user_lat = st.session_state['user_lat']
-    user_lon = st.session_state['user_lon']
+    
+    ####################### Finding Best Weather #######################
 
     if st.button('Find Best Weather!'):
+
+        user_lat = st.session_state['user_lat']
+        user_lon = st.session_state['user_lon']
 
         status_text = st.empty()
         sub_status_text = st.empty()
         status_text.write('Finding the best weather...')
 
         weights = {'temp': temp_pref, 'wind': wind_speed_pref, 'rain': rainfall_pref}
-
+        print (user_lat, user_lon, user_radius, user_population)
         with st.spinner('Finding matching destinations, this will take a few seconds...'):
             towns = get_towns_within_radius(user_lat, user_lon, user_radius, user_population)  
 
@@ -308,6 +319,7 @@ if __name__ == "__main__":
         sub_status_text.write('Fetching weather data...') 
         weather_data_list = get_weather_data_for_towns(towns, api_key)
         sub_status_text = st.empty()
+
         weather_scores, max_score = calculate_weather_scores_and_max(weather_data_list, weights, user_days_ahead)
         
         sub_status_text.empty()
@@ -316,8 +328,6 @@ if __name__ == "__main__":
 
         folium_static(weather_map)
 
-        st.session_state['user_lat'] = None
-        st.session_state['user_lon'] = None
         st.session_state['multiple_user_locations'] = None
 
         with open('weather_score_explanation.md', 'r') as explanation_file:
