@@ -67,7 +67,6 @@ def get_weather_data_for_towns(towns: list[Tuple[str, float, float]], api_key: s
         progress_bar.progress(progress_percentage)
 
     progress_bar.empty()
-    sub_status_text.empty()
 
     return weather_data_list
 
@@ -152,7 +151,7 @@ def display_homonymous_location_map(locations: list[dict]) -> folium.Map:
     return mymap
 
 
-def select_homonymous_locations(locations):
+def select_homonymous_locations(locations) -> Optional[int]:
     options = ['']
 
     for i, _ in enumerate(locations):
@@ -197,7 +196,7 @@ def calculate_weather_scores_and_max(weather_data_list: list[dict], weights: dic
     return weather_scores, max_score
 
 
-def add_markers_to_weather_map(weather_scores: list[dict], max_score: float, mymap: folium.Map):
+def add_markers_to_weather_map(weather_scores: list[dict], max_score: float, mymap: folium.Map) -> None:
     for weather_score in weather_scores:
         if weather_score[2] == max_score:
             folium.Marker(
@@ -208,14 +207,14 @@ def add_markers_to_weather_map(weather_scores: list[dict], max_score: float, mym
 
 
 
-def display_best_weather_map(weather_scores: list[dict], max_score: float, center_lat: float, center_lon: float) -> folium.Map:
-    map_center = [center_lat, center_lon]
+def display_best_weather_map(weather_scores: list[dict], max_score: float) -> None:
+    map_center = [st.session_state['user_lat'], st.session_state['user_lon']]
     mymap = folium.Map(location=map_center, zoom_start = 9)
     add_markers_to_weather_map(weather_scores, max_score, mymap)
     folium_static(mymap)
 
 
-def display_score_calculation_explanation():
+def display_score_calculation_explanation() -> None:
     try:
         with open('weather_score_explanation.md', 'r') as explanation_file:
             weather_score_explanation = explanation_file.read()
@@ -246,11 +245,69 @@ def get_location_preferences_from_ui() -> Tuple[int, int, int]:
     return user_radius, user_population, user_days_ahead
 
 
-def get_user_location_name_from_ui():
+def get_user_location_name_from_ui() -> str:
     user_location_name = st.text_input('Where do you need to escape from? e.g. New York')
-    return user_location_name.title()
+    return user_location_name.strip().title()
 
 
+def find_location(location_name: str) -> None:
+    if not location_name.strip(): # Handle empty input
+        st.error('Please enter a location.')
+        st.stop()
+
+    st.session_state['possible_user_locations'] = get_possible_user_locations(location_name)
+    st.session_state['fetched_user_locations'] = True
+
+
+def find_best_weather():
+    user_lat = st.session_state['user_lat']
+    user_lon = st.session_state['user_lon']
+
+    status_text = st.empty()
+    sub_status_text = st.empty()
+    status_text.write('Finding the best weather...')
+
+    with st.spinner('Finding matching destinations, this will take a few seconds...'):
+        towns = get_towns_within_radius(user_lat, user_lon, user_radius, user_population)  
+
+    if len(towns) == 0:
+        sub_status_text.empty()
+        st.info('Could not find towns with such a large population. Looks like staying at home is the best option!', icon="ℹ️")
+        st.stop()
+    
+    sub_status_text.write('Fetching weather data...') 
+    weather_data_list = get_weather_data_for_towns(towns, api_key)
+    sub_status_text.empty()
+
+    weights = {'temp': temp_pref, 'wind': wind_speed_pref, 'rain': rainfall_pref}
+
+    weather_scores, max_score = calculate_weather_scores_and_max(weather_data_list, weights, user_days_ahead)
+    status_text.write('Here you go!')
+
+    return weather_scores, max_score
+
+
+def determine_user_coordinates():
+    possible_user_locations = st.session_state['possible_user_locations']
+    if len(possible_user_locations['elements']) > 1:
+        st.write('Multiple locations found with the same name.')
+        user_location_index = select_homonymous_locations(possible_user_locations['elements'])
+        st.session_state['multiple_user_locations'] = True
+        if user_location_index is None:
+            st.stop()
+        user_coordinates = possible_user_locations['elements'][user_location_index]
+    elif len(possible_user_locations['elements']) == 1: 
+        st.session_state['multiple_user_locations'] = False
+        user_coordinates = possible_user_locations['elements'][0]
+    else:
+        st.error('Could not find coordinates for user location.')
+        st.info('Note: If you cannot find your location, find out what it is called in OpenStreetMap: https://www.openstreetmap.org/', icon='ℹ️')
+        st.stop()
+
+    st.session_state['user_lat'] = user_coordinates['lat']
+    st.session_state['user_lon'] = user_coordinates['lon'] 
+
+    
 if __name__ == "__main__":
 
     ####################### Setup #######################
@@ -260,21 +317,23 @@ if __name__ == "__main__":
     if not api_key:
         st.error("API_KEY environment variable is not set.")
 
-    st.set_page_config(page_title='Best Weather Finder', page_icon='🏖️', layout="centered", initial_sidebar_state="auto", menu_items=None)
+    st.set_page_config(page_title='Best Weather Finder', page_icon='🏖️', layout="wide", initial_sidebar_state="auto", menu_items=None)
 
     st.title('Best Weather Finder 🏖️')
     st.subheader('Your solution to summer, wherever and whenever!')
 
+    col1, col2 = st.columns(2)
+
     ####################### Preferences #######################
 
     st.sidebar.title("Preferences")
-    st.sidebar.markdown("### Weather\n---")
-    st.sidebar.markdown("How important are the following weather conditions to you?")
-    st.sidebar.markdown("0: Not important, 100: Very important")
-
+    st.sidebar.header("Weather 🌤️")
     temp_pref, wind_speed_pref, rainfall_pref = get_weather_preferences_from_ui()
 
-    st.sidebar.markdown("### Travel\n---")
+    st.sidebar.info('0:   Not Important  \n100: Very Important', icon='ℹ️')
+
+    st.sidebar.markdown("---")
+    st.sidebar.header("Travel 🧳")
 
     user_radius, user_population, user_days_ahead = get_location_preferences_from_ui()
     
@@ -283,79 +342,32 @@ if __name__ == "__main__":
     user_coordinates = None
     user_lat         = None
     user_lon         = None 
+    
+    with col1:
+        user_location_name = get_user_location_name_from_ui()
 
-    user_location_name = get_user_location_name_from_ui()
+        # If there are multiple locations with the same name, this part of the script 
+        # must be executed again to determine the coordinates of the selected location
+        if st.button('Find My Location'):
+            find_location(user_location_name)             
 
-    # If there are multiple locations with the same name, this part of the script 
-    # must be executed again to determine the coordinates of the selected location
-    if st.button('Find My Location'):             
-        if not user_location_name.strip(): # Handle empty input
-            st.error('Please enter a location.')
+        if 'fetched_user_locations' in st.session_state and st.session_state['fetched_user_locations'] is True:
+            determine_user_coordinates()
+
+        if 'fetched_user_locations' not in st.session_state:
             st.stop()
 
-        possible_user_locations = get_possible_user_locations(user_location_name)
-        st.session_state['fetched_user_locations'] = True
-        st.session_state['possible_user_locations'] = possible_user_locations
-
-    if 'fetched_user_locations' in st.session_state and st.session_state['fetched_user_locations'] is True:
-        possible_user_locations = st.session_state['possible_user_locations']
-        if len(possible_user_locations['elements']) > 1:
-            st.write('Multiple locations found with the same name.')
-            user_location_index = select_homonymous_locations(possible_user_locations['elements'])
-            st.session_state['multiple_user_locations'] = True
-            if user_location_index is None:
-                st.stop()
-            user_coordinates = possible_user_locations['elements'][user_location_index]
-        elif len(possible_user_locations['elements']) == 1: 
-            st.session_state['multiple_user_locations'] = False
-            user_coordinates = possible_user_locations['elements'][0]
-        else:
-            st.error('Could not find coordinates for user location.')
-            st.info('Note: If you cannot find your location, find out what it is called in OpenStreetMap: https://www.openstreetmap.org/', icon='ℹ️')
-            st.stop()
-            
-        user_lat = user_coordinates['lat']
-        user_lon = user_coordinates['lon']
-        st.session_state['user_lat'] = user_lat
-        st.session_state['user_lon'] = user_lon
-
-    if 'fetched_user_locations' not in st.session_state:
-        st.stop()
-
-    st.success('Found your location!', icon="✅")
+        st.success('Found your location!', icon="✅")
     
     ####################### Finding Best Weather #######################
 
-    if st.button('Find Best Weather!'):
+        if st.button('Find Best Weather!'):
+    
+            weather_scores, max_score = find_best_weather()  
 
-        user_lat = st.session_state['user_lat']
-        user_lon = st.session_state['user_lon']
+            with col2:
+                display_best_weather_map(weather_scores, max_score)
 
-        status_text = st.empty()
-        sub_status_text = st.empty()
-        status_text.write('Finding the best weather...')
-
-        with st.spinner('Finding matching destinations, this will take a few seconds...'):
-            towns = get_towns_within_radius(user_lat, user_lon, user_radius, user_population)  
-
-        if len(towns) == 0:
-            sub_status_text.empty()
-            st.info('Could not find towns with such a large population. Looks like staying at home is the best option!', icon="ℹ️")
-            st.stop()
-        
-        sub_status_text.write('Fetching weather data...') 
-        weather_data_list = get_weather_data_for_towns(towns, api_key)
-        sub_status_text = st.empty()
-
-        weights = {'temp': temp_pref, 'wind': wind_speed_pref, 'rain': rainfall_pref}
-        weather_scores, max_score = calculate_weather_scores_and_max(weather_data_list, weights, user_days_ahead)
-        
-        sub_status_text.empty()
-        status_text.write('Here you go!')
-        weather_map = display_best_weather_map(weather_scores, max_score, user_lat, user_lon)
-
-        st.session_state['multiple_user_locations'] = None
-        with st.expander('How is the weather score calculated?'):
-            display_score_calculation_explanation()
-
-# TODO: Turn button clicks into callbacks
+                st.session_state['multiple_user_locations'] = None
+                with st.expander('How is the weather score calculated?'):
+                    display_score_calculation_explanation()
