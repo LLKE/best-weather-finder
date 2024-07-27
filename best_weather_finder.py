@@ -147,8 +147,7 @@ def display_homonymous_location_map(locations: list[dict]) -> folium.Map:
             popup=f"{index}",
             icon=folium.Icon(color='green')  
         ).add_to(mymap)
-
-    return mymap
+    folium_static(mymap, width=650, height=400)
 
 
 def select_homonymous_locations(locations) -> Optional[int]:
@@ -157,9 +156,8 @@ def select_homonymous_locations(locations) -> Optional[int]:
     for i, _ in enumerate(locations):
         options.append(i)
     
-    homonymous_locations_map = display_homonymous_location_map(locations)
-    folium_static(homonymous_locations_map)
-
+    display_homonymous_location_map(locations)
+    
     selected_option = st.selectbox('Click on the location on the map and select the index here:', options)
     if selected_option == '':
         return None
@@ -204,7 +202,6 @@ def add_markers_to_weather_map(weather_scores: list[dict], max_score: float, mym
                 popup=f"{weather_score[0]}: {weather_score[2]:.2f}",
                 icon=folium.Icon(color='green')  
             ).add_to(mymap)
-
 
 
 def display_best_weather_map(weather_scores: list[dict], max_score: float) -> None:
@@ -259,9 +256,18 @@ def find_location(location_name: str) -> None:
     st.session_state['fetched_user_locations'] = True
 
 
-def find_best_weather():
+def find_best_weather(user_preferences):
+
+    api_key = os.getenv('API_KEY')
+
+    if not api_key:
+        st.error("API_KEY environment variable is not set.")
+        st.stop()
+
     user_lat = st.session_state['user_lat']
     user_lon = st.session_state['user_lon']
+
+    user_radius, user_population, user_days_ahead, temp_pref, wind_speed_pref, rainfall_pref = user_preferences
 
     status_text = st.empty()
     sub_status_text = st.empty()
@@ -282,12 +288,12 @@ def find_best_weather():
     weights = {'temp': temp_pref, 'wind': wind_speed_pref, 'rain': rainfall_pref}
 
     weather_scores, max_score = calculate_weather_scores_and_max(weather_data_list, weights, user_days_ahead)
-    status_text.write('Here you go!')
+    status_text.empty()
 
     return weather_scores, max_score
 
 
-def determine_user_coordinates():
+def determine_user_coordinates() -> None:
     possible_user_locations = st.session_state['possible_user_locations']
     if len(possible_user_locations['elements']) > 1:
         st.write('Multiple locations found with the same name.')
@@ -296,62 +302,58 @@ def determine_user_coordinates():
         if user_location_index is None:
             st.stop()
         user_coordinates = possible_user_locations['elements'][user_location_index]
-    elif len(possible_user_locations['elements']) == 1: 
+    elif len(possible_user_locations['elements']) == 1:
         st.session_state['multiple_user_locations'] = False
         user_coordinates = possible_user_locations['elements'][0]
     else:
         st.error('Could not find coordinates for user location.')
-        st.info('Note: If you cannot find your location, find out what it is called in OpenStreetMap: https://www.openstreetmap.org/', icon='ℹ️')
+        st.info('Note: If you cannot find your location, find out what it is called in OpenStreetMap: \
+                 https://www.openstreetmap.org/', icon='ℹ️')
         st.stop()
 
     st.session_state['user_lat'] = user_coordinates['lat']
-    st.session_state['user_lon'] = user_coordinates['lon'] 
+    st.session_state['user_lon'] = user_coordinates['lon']
 
     
 if __name__ == "__main__":
 
     ####################### Setup #######################
 
-    api_key = os.getenv('API_KEY')
-
-    if not api_key:
-        st.error("API_KEY environment variable is not set.")
-
-    st.set_page_config(page_title='Best Weather Finder', page_icon='🏖️', layout="wide", initial_sidebar_state="auto", menu_items=None)
+    st.set_page_config(page_title='Best Weather Finder', page_icon='🏖️', 
+                       layout="wide", initial_sidebar_state="auto", menu_items=None)
 
     st.title('Best Weather Finder 🏖️')
     st.subheader('Your solution to summer, wherever and whenever!')
-
     col1, col2 = st.columns(2)
+
 
     ####################### Preferences #######################
 
     st.sidebar.title("Preferences")
     st.sidebar.header("Weather 🌤️")
-    temp_pref, wind_speed_pref, rainfall_pref = get_weather_preferences_from_ui()
+    weather_preferences = get_weather_preferences_from_ui()
 
     st.sidebar.info('0:   Not Important  \n100: Very Important', icon='ℹ️')
 
     st.sidebar.markdown("---")
     st.sidebar.header("Travel 🧳")
 
-    user_radius, user_population, user_days_ahead = get_location_preferences_from_ui()
-    
+    location_preferences = get_location_preferences_from_ui()
+
+    user_preferences = location_preferences + weather_preferences
+
     ####################### Finding Location #######################
 
-    user_coordinates = None
-    user_lat         = None
-    user_lon         = None 
-    
     with col1:
         user_location_name = get_user_location_name_from_ui()
 
         # If there are multiple locations with the same name, this part of the script 
         # must be executed again to determine the coordinates of the selected location
         if st.button('Find My Location'):
-            find_location(user_location_name)             
+            find_location(user_location_name)           
 
-        if 'fetched_user_locations' in st.session_state and st.session_state['fetched_user_locations'] is True:
+        if 'fetched_user_locations' in st.session_state and \
+            st.session_state['fetched_user_locations'] is True:
             determine_user_coordinates()
 
         if 'fetched_user_locations' not in st.session_state:
@@ -362,10 +364,8 @@ if __name__ == "__main__":
     ####################### Finding Best Weather #######################
 
         if st.button('Find Best Weather!'):
-    
-            weather_scores, max_score = find_best_weather()  
-
             with col2:
+                weather_scores, max_score = find_best_weather(user_preferences)
                 display_best_weather_map(weather_scores, max_score)
 
                 st.session_state['multiple_user_locations'] = None
