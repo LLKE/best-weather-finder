@@ -27,19 +27,19 @@ def parse_location(location_name: str) -> str:
 
 
 # Function to get towns within a radius
-def get_towns_within_radius(center_lat: float, center_lon: float, radius_km: int, min_population: int = 500) -> list[Tuple[str, float, float]]:
+def get_towns_within_radius(lat: float, lon: float, radius_km: int, min_population: int = 500) -> list[Tuple[str, float, float]]:
     overpass_url = "http://overpass-api.de/api/interpreter"
     overpass_query = f"""
     [out:json];
     (
-      node["place"="city"](around:{radius_km * 1000},{center_lat},{center_lon})["population"];
-      node["place"="town"](around:{radius_km * 1000},{center_lat},{center_lon})["population"];
-      node["place"="village"](around:{radius_km * 1000},{center_lat},{center_lon})["population"];
+      node["place"="city"](around:{radius_km * 1000},{lat},{lon})["population"];
+      node["place"="town"](around:{radius_km * 1000},{lat},{lon})["population"];
+      node["place"="village"](around:{radius_km * 1000},{lat},{lon})["population"];
     );
     out body;
     """
     try:
-        response = requests.get(overpass_url, params={'data': overpass_query}, timeout=5)
+        response = requests.get(overpass_url, params={'data': overpass_query}, timeout=180)
     except requests.exceptions.Timeout:
         st.error("Searching for towns took too long. Please try again.")
         st.stop()
@@ -285,11 +285,11 @@ def find_best_weather(user_preferences):
 
     with st.spinner('Finding matching destinations, this will take a few seconds...'):
         towns = get_towns_within_radius(user_lat, user_lon, user_radius, user_population)
-
+    
     if len(towns) == 0:
         sub_status_text.empty()
         st.info('Could not find towns with such a large population.\
-                 Looks like staying at home is the best option!', icon="ℹ️")
+                Looks like staying at home is the best option!', icon="ℹ️")
         st.stop()
 
     sub_status_text.write('Fetching weather data...')
@@ -341,12 +341,10 @@ if __name__ == "__main__":
     st.sidebar.title("Preferences")
     st.sidebar.header("Weather 🌤️")
     weather_preferences = get_weather_preferences_from_ui()
-
     st.sidebar.info('0:   Not Important  \n100: Very Important', icon='ℹ️')
 
     st.sidebar.markdown("---")
     st.sidebar.header("Travel 🧳")
-
     location_preferences = get_location_preferences_from_ui()
 
     ####################### Finding Location #######################
@@ -378,3 +376,6 @@ if __name__ == "__main__":
                 st.session_state['multiple_user_locations'] = None
                 with st.expander('How is the weather score calculated?'):
                     display_score_calculation_explanation()
+
+
+# TODO: Fix bug, where timeout for finding towns stops the script but keeps the spinner going
