@@ -6,8 +6,8 @@ import os
 from datetime import datetime, timezone, timedelta
 from streamlit_folium import folium_static
 from typing import Optional, Tuple
+# from PIL import Image
 
-import re
 
 def parse_population(population_data: str) -> int:
     match = re.search(r'\d[\d\s]*', population_data)
@@ -39,7 +39,8 @@ def get_towns_within_radius(lat: float, lon: float, radius_km: int, min_populati
     out body;
     """
     try:
-        response = requests.get(overpass_url, params={'data': overpass_query}, timeout=180)
+        with st.spinner('Finding matching destinations, this will take a few seconds...'):
+            response = requests.get(overpass_url, params={'data': overpass_query}, timeout=5)
     except requests.exceptions.Timeout:
         st.error("Searching for towns took too long. Please try again.")
         st.stop()
@@ -64,7 +65,7 @@ def get_weather_data_for_towns(towns: list[Tuple[str, float, float]], api_key: s
         url = \
         f"http://api.openweathermap.org/data/2.5/forecast?lat={lat}&lon={lon}&appid={api_key}&units=metric"
         try:
-            response = requests.get(url, timeout=5).json()
+            response = requests.get(url, timeout=180).json()
         except requests.exceptions.Timeout:
             st.error("Retrieving the weather data took too long. Please try again.")
             st.stop()
@@ -216,6 +217,7 @@ def display_best_weather_map(weather_scores_arg: list[dict], max_score_arg: floa
     map_center = [st.session_state['user_lat'], st.session_state['user_lon']]
     mymap = folium.Map(location=map_center, zoom_start = 9)
     add_markers_to_weather_map(weather_scores_arg, max_score_arg, mymap)
+    st.subheader('Found Summer! 🌞')
     folium_static(mymap)
 
 
@@ -281,10 +283,9 @@ def find_best_weather(user_preferences):
 
     status_text = st.empty()
     sub_status_text = st.empty()
-    status_text.write('Finding the best weather...')
+    status_text.write('Searching for summer...')
 
-    with st.spinner('Finding matching destinations, this will take a few seconds...'):
-        towns = get_towns_within_radius(user_lat, user_lon, user_radius, user_population)
+    towns = get_towns_within_radius(user_lat, user_lon, user_radius, user_population)
     
     if len(towns) == 0:
         sub_status_text.empty()
@@ -334,6 +335,7 @@ if __name__ == "__main__":
                        layout="wide", initial_sidebar_state="auto", menu_items=None)
 
     st.title('Best Weather Finder 🏖️')
+    #st.image(Image.open("Best-Weather-Finder.png"))
     col1, col2 = st.columns(2)
 
     ####################### Preferences #######################
@@ -378,4 +380,3 @@ if __name__ == "__main__":
                     display_score_calculation_explanation()
 
 
-# TODO: Fix bug, where timeout for finding towns stops the script but keeps the spinner going
