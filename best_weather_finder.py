@@ -40,7 +40,7 @@ def get_towns_within_radius(lat: float, lon: float, radius_km: int, min_populati
     """
     try:
         with st.spinner('Finding matching destinations, this will take a few seconds...'):
-            response = requests.get(overpass_url, params={'data': overpass_query}, timeout=5)
+            response = requests.get(overpass_url, params={'data': overpass_query}, timeout=180)
     except requests.exceptions.Timeout:
         st.error("Searching for towns took too long. Please try again.")
         st.stop()
